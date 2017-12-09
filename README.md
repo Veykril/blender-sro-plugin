@@ -1,0 +1,2 @@
+This is my attempt at making a Blender addon which lets you import Silkroad Onlines .bsr files.
+it is currently barely working and with hardcoded paths, so it probably wont work on your machine unless you edit the hardcoded parts.
