@@ -100,6 +100,8 @@ def read_bsr(context, filepath):
         
     return {'FINISHED'}
 
+from mathutils import Vector, Matrix
+import math
 def create_skeleton(root_path, f):
     for i in range(0, read_int(f)):
         path = read_str(f)
@@ -115,13 +117,17 @@ def create_skeleton(root_path, f):
         amt.name = path
         amt.show_axes = True
         amt.show_names = True
+        ttp = {}
+        root = None
         bpy.ops.object.mode_set(mode='EDIT')
         with open(root_path+path, 'rb') as f2:
             version = f2.read(12)
             print("[Skeleton] File version: {}".format(version))
             for bi in range(0, read_int(f2)):
                 f2.read(1)
-                current_bone = amt.edit_bones.new(read_str(f2))
+                bone = read_str(f2)
+                if not root:
+                    root = bone
                 parent = read_str(f2)
                 rotation_to_parent = read_vec(f2, 4)
                 translation_to_parent = read_vec(f2, 3)
@@ -129,20 +135,36 @@ def create_skeleton(root_path, f):
                 translation_to_origin = read_vec(f2, 3)
                 unkRotation = read_vec(f2, 4)
                 unkTranslation = read_vec(f2, 3)
+                b = amt.edit_bones.new(bone)
+                b.use_connect = False
+                b.head = translation_to_origin
+                b.tail = translation_to_origin
                 if parent:
-                    parent = amt.edit_bones[parent]
-                    current_bone.parent = parent
-                    current_bone.head = translation_to_origin
-                    current_bone.use_connect = False
-                    current_bone.tail = parent.head
-                else:
-                    current_bone.head = translation_to_origin
-                    current_bone.tail = translation_to_origin
+                    b.tail = amt.edit_bones[parent].head
+                    b.parent = amt.edit_bones[parent]
+                children = []
                 for ci in range(0, read_int(f2)):
-                    child = read_str(f2)
+                    children.append(read_str(f2))
+                ttp[bone] = (translation_to_parent, rotation_to_parent, parent, children)
         bpy.ops.object.mode_set(mode='OBJECT')
+
+        patch_bone_recursive(amt, bone, root, ttp)
+
+        mat_rot = Matrix.Rotation(math.radians(90.0), 4, 'X')
+        mat_rot = mat_rot * Matrix.Rotation(math.radians(90.0), 4, 'Y')
+        mat = mat_rot * Matrix.Scale(-1.0, 4, (1.0, 0.0, 0.0))
+        amt.transform(mat)
         f.read(read_int(f))
         f.read(read_int(f))
+
+def patch_bone_recursive(amt, bone, root, ttp):
+    cbone = amt.bones[bone]
+    if bone == root:
+        pass
+    else:
+        cbone.head_local = ttp[bone][0]
+    for c in ttp[bone][3]:
+        patch_bone_recursive(amt, c, root, ttp)
 
 def read_vec(f, l):
     return tuple(read_float(f) for _ in range(0, l))
