@@ -66,10 +66,29 @@ def read_bsr(context, filepath):
         print("[Resource] Type: {:X}".format(typ))
         # HEADEREND
         
+        f.seek(p_skeleton)
+        create_skeleton(root_path, f)
+
+        bm = bmesh.new()
+
         f.seek(p_material)
         mats = create_materials(root_path, f)
         f.seek(p_mesh)
-        build_meshes(root_path, f, flag_0, mats)
+        objects = []
+        #bpy.ops.object.select_all(action='DESELECT')
+        for mesh in build_meshes(root_path, f, flag_0, mats):
+            #bm.from_mesh(mesh)
+            o = bpy.data.objects.new(name, mesh)
+            bpy.context.scene.objects.link(o)
+            o.select = True
+            objects.append(o)
+        #bpy.context.scene.objects.active = bpy.data.objects[name]
+        #bpy.ops.object.join()
+        #me = bpy.data.meshes.new(name)
+        #bm.to_mesh(me)
+        #o = bpy.data.objects.new(name, me)
+        #bpy.context.scene.objects.link( o )
+
 
         f.seek(p_mesh_group)
         for i in range(0,read_int(f)):
@@ -81,48 +100,96 @@ def read_bsr(context, filepath):
         
     return {'FINISHED'}
 
+def create_skeleton(root_path, f):
+    for i in range(0, read_int(f)):
+        path = read_str(f)
+        print("[Skeleton] {}".format(path))
+        bpy.ops.object.add(
+            type='ARMATURE', 
+            enter_editmode=True,
+            location=(0, 0, 0))
+        ob = bpy.context.object
+        ob.show_x_ray = True
+        ob.name = path
+        amt = ob.data
+        amt.name = path
+        amt.show_axes = True
+        amt.show_names = True
+        bpy.ops.object.mode_set(mode='EDIT')
+        with open(root_path+path, 'rb') as f2:
+            version = f2.read(12)
+            print("[Skeleton] File version: {}".format(version))
+            for bi in range(0, read_int(f2)):
+                f2.read(1)
+                current_bone = amt.edit_bones.new(read_str(f2))
+                parent = read_str(f2)
+                rotation_to_parent = read_vec(f2, 4)
+                translation_to_parent = read_vec(f2, 3)
+                rotation_to_origin = read_vec(f2, 4)
+                translation_to_origin = read_vec(f2, 3)
+                unkRotation = read_vec(f2, 4)
+                unkTranslation = read_vec(f2, 3)
+                if parent:
+                    parent = amt.edit_bones[parent]
+                    current_bone.parent = parent
+                    current_bone.head = translation_to_origin
+                    current_bone.use_connect = False
+                    current_bone.tail = parent.head
+                else:
+                    current_bone.head = translation_to_origin
+                    current_bone.tail = translation_to_origin
+                for ci in range(0, read_int(f2)):
+                    child = read_str(f2)
+        bpy.ops.object.mode_set(mode='OBJECT')
+        f.read(read_int(f))
+        f.read(read_int(f))
+
+def read_vec(f, l):
+    return tuple(read_float(f) for _ in range(0, l))
+
 def create_materials(root_path, f):
     mats = {}
     for i in range(0, read_int(f)):
         m_id = read_int(f)
         path = read_str(f)
         path = root_path+path
-        with open(path, 'rb') as f:
-            version = f.read(12)
+        with open(path, 'rb') as f2:
+            version = f2.read(12)
             print("[Material] File version: {}".format(version))
-            for i in range(0, read_int(f)):
-                name = read_str(f)
+            for i in range(0, read_int(f2)):
+                name = read_str(f2)
                 print("[Material] {}".format(name))
-                diffuse = (read_float(f), read_float(f), read_float(f))
-                diffuse_intensity = read_float(f)
+                diffuse = (read_float(f2), read_float(f2), read_float(f2))
+                diffuse_intensity = read_float(f2)
                 print("[Material] Diffuse color: {} {}".format(diffuse, diffuse_intensity))
-                ambient = (read_float(f), read_float(f), read_float(f), read_float(f))
+                ambient = (read_float(f2), read_float(f2), read_float(f2), read_float(f2))
                 print("[Material] Ambient color: {} (Blender only supports one global ambient color)".format(ambient))
-                specular = (read_float(f), read_float(f), read_float(f))
-                specular_intensity = read_float(f)
+                specular = (read_float(f2), read_float(f2), read_float(f2))
+                specular_intensity = read_float(f2)
                 print("[Material] Specular color: {} {}".format(specular, specular_intensity))
-                emissive = (read_float(f), read_float(f), read_float(f))
-                print("[Material] Emissive color: {} {} (Blender does not support alpha for this)".format(emissive, read_float(f)))
-                print("[Material] Specular Power? {}".format(read_float(f)))
-                material_entry_flag = read_int(f)
-                print("[Material] MaterialEntryFlags {}".format(material_entry_flag))
-                diffuse_map = read_str(f)
-                print("[Material] Always 1.0 == {}".format(read_float(f)))
-                print("[Material] {} (0, 24, 2080)".format(read_short(f)))
-                same_dir = f.read(1) == b'\x00'
+                emissive = (read_float(f2), read_float(f2), read_float(f2))
+                print("[Material] Emissive color: {} {} (Blender does not support alpha for this)".format(emissive, read_float(f2)))
+                print("[Material] Specular Power? {}".format(read_float(f2)))
+                material_entry_flags = read_int(f2)
+                print("[Material] MaterialEntryFlags {}".format(material_entry_flags))
+                diffuse_map = read_str(f2)
+                print("[Material] Always 1.0 == {}".format(read_float(f2)))
+                print("[Material] {} (0, 24, 2080)".format(read_short(f2)))
+                same_dir = f2.read(1) == b'\x00'
                 print("[Material] Diffuse map path: {} {}".format(diffuse_map, same_dir))
-                if material_entry_flag == 9029:
-                    print("[Material] NormalMap: {}".format(read_str(f)))
-                if material_entry_flag != 833:
-                    print("[Material] {}".format(read_int(f)))
+                if (material_entry_flags & 0b10000000000000) != 0:
+                    print("[Material] NormalMap: {}".format(read_str(f2)))
+                if (material_entry_flags & 0b100) != 0:
+                    print("[Material] {}".format(read_int(f2)))
                 mat = bpy.data.materials.new(name=name)
                 mat.diffuse_color = diffuse
                 mat.diffuse_intensity = diffuse_intensity
                 mat.specular_color = specular
                 mat.specular_intensity = specular_intensity
                 mat.ambient = 1 # Blender only supports one global ambient color it seems
-                mat.use_transparency = True
-                mat.alpha = 0.0
+                if material_entry_flags & 0x200 != 0:
+                    mat.use_transparency = True
+                    mat.alpha = 0.0
 
                 p = path.rfind('\\')
                 if same_dir:
@@ -131,13 +198,14 @@ def create_materials(root_path, f):
                     img = bpy.data.images.load(root_path+diffuse_map.replace(".ddj", ".dds"))
                 cTex = bpy.data.textures.new(name, type = 'IMAGE')
                 cTex.image = img
-                cTex.use_alpha = True
+                img.use_alpha = material_entry_flags & 0x200 != 0
 
                 mtex = mat.texture_slots.add()
                 mtex.texture = cTex
                 mtex.texture_coords = 'UV'
-                mtex.use_map_alpha = True
-                mtex.alpha_factor = 1.0
+                if material_entry_flags & 0x200 != 0:
+                    mtex.use_map_alpha = True
+                    mtex.alpha_factor = 1.0
                 # mtex.use_map_color_diffuse = True 
                 # mtex.use_map_color_emission = True 
                 # mtex.emission_color_factor = 0.5
@@ -158,9 +226,10 @@ def build_meshes(root_path, f, flag, materials):
     
     meshes = []
     for mesh in mesh_paths:
-        create_mesh(root_path, f, mesh, flag, materials)
+        meshes.append(create_mesh(root_path, mesh, flag, materials))
+    return meshes
 
-def create_mesh(root_path, f, mesh, flag, materials):
+def create_mesh(root_path, mesh, flag, materials):
     with open(root_path+mesh, 'rb') as f:
         version = f.read(12)
         print("[Mesh] File version: {}".format(version))
@@ -174,31 +243,25 @@ def create_mesh(root_path, f, mesh, flag, materials):
         p_collision = read_int(f)
         p_unk2 = read_int(f)
         p_unk3 = read_int(f)
-        print("[Mesh] {:X}, {:X}, {:X}, {:X}".format(p_unk0, p_unk1, p_unk2, p_unk3))
+        print("[Mesh] unknown_pointers {:X}, {:X}, {:X}, {:X}".format(p_unk0, p_unk1, p_unk2, p_unk3))
         
         flag_0 = read_int(f)
         flag_1 = read_int(f)
         flag_2 = read_int(f)
         flag_lightmap = read_int(f)
         flag_4 = read_int(f)
-        print("[Mesh] {:X}, {:X}, {:X}, {:X}, {:X}".format(flag_0, flag_1, flag_2, flag_lightmap, flag_4))
+        print("[Mesh] Flags: {:X}, {:X}, {:X}, {:X}, {:X}".format(flag_0, flag_1, flag_2, flag_lightmap, flag_4))
 
         name = read_str(f)
-        print("[Mesh] {}".format(name))
+        print("[Mesh] Name: {}".format(name))
         material = read_str(f)
-        print("[Mesh] {}".format(material))
+        print("[Mesh] Material: {}".format(material))
         unk = read_int(f)
-        print("[Mesh] {}".format(unk))
+        print("[Mesh] Unk: {}".format(unk))
 
         me = bpy.data.meshes.new(name)
-        obj = bpy.data.objects.new(name, me)
-        obj.data.materials.append(materials[material])
+        me.materials.append(materials[material])
         
-        scn = bpy.context.scene
-        scn.objects.link(obj)
-        scn.objects.active = obj
-        obj.select = True
-
         f.seek(p_verticies)
         vert = []
         tex_coords = []
@@ -216,25 +279,28 @@ def create_mesh(root_path, f, mesh, flag, materials):
             faces.append((read_short(f), read_short(f), read_short(f)))
 
         me.from_pydata(vert, [], faces)
-        me.update(calc_edges=True)
+        me.update()
 
-        bpy.ops.object.mode_set(mode='EDIT')
-        bm = bmesh.from_edit_mesh(me)
+        bm = bmesh.new()
+        bm.from_mesh(me)
         bm.verts.ensure_lookup_table()
         bm.verts.index_update()
         uv_layer = bm.loops.layers.uv.new(name)
         for face in bm.faces:
             for loop in face.loops:
                 loop[uv_layer].uv = tex_coords[loop.vert.index]
-        bmesh.update_edit_mesh(me)
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bm.to_mesh(me)
+        me.update()
 
         f.seek(p_unk0)
         for i in range(0, read_int(f)):
             # print("[Spam] {} {}".format(read_float(f), read_int(f)))
+            pass
         f.seek(p_unk1)
         for i in range(0, read_int(f)):
             # print("[Spam] {} {} {}".format(read_int(f), read_int(f), read_float(f)))
+            pass
+        return me
 
 #file helper funcs
 def read_int(f):
